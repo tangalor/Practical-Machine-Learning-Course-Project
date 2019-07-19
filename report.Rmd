@@ -1,0 +1,196 @@
+---
+title: "Machine Learning Project"
+author: "Lorenzo Tanganelli"
+date: "19/7/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(vroom)
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(purrr)
+
+set.seed(999)
+```
+
+## Github Repository 
+You can find the entire project (the) R code produced and all results) on this github repo: 
+
+* https://github.com/tangalor/Practical-Machine-Learning-Course-Project
+
+## Background of the project
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants as they perform barbell lifts correctly and incorrectly 5 different ways.
+
+Six young healthy participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+* Class A - exactly according to the specification
+* Class B - throwing the elbows to the front
+* Class C - lifting the dumbbell only halfway
+* Class D - lowering the dumbbell only halfway
+* Class E - throwing the hips to the front
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. Researchers made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg).
+
+## Data to work on
+The training data for this project are available here:
+
+* training data -> https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+* testing data -> https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The real source of this data is http://groupware.les.inf.puc-rio.br/har. (Please, If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.)
+
+## Goal of the project to achieve
+
+The goal of this project is to predict the manner in which subjects did the exercise. This is the “classe” variable in the training set. The model will use the other variables to predict with. This report describes:
+
+* how the model is built
+* use of cross validation
+* an estimate of expected out of sample error
+
+## Project explanation (inside the code)
+
+This is the commented code produced for the project.
+
+# Loading libraries
+Load all the necessary libraries to use common functions and analyze the data.
+
+```
+library(tidyverse)
+library(vroom)
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(purrr)
+
+set.seed(999)
+```
+
+# Import Dataset
+Import dataset to work on.
+
+* **train** is the trainign data
+* **test** is the testing data
+
+Then, train and test are both cleaned deleting what it was not necessary.
+
+```{r load, echo=TRUE}
+train <- vroom("C:/Users/LEI00023/Downloads/pml-training.csv", delim = ",", 
+               na=c("NA","#DIV/0!", ""))
+
+test <- vroom("C:/Users/LEI00023/Downloads/pml-testing.csv", delim = ",",
+              na=c("NA","#DIV/0!", ""))
+
+
+train <- train[,-c(1:7)] %>% 
+         keep(~sum(is.na(.x))==0) %>% 
+         mutate(id=row_number(),
+                classe = as.factor(classe))
+
+
+test <- test[,-c(1:7)] %>% keep(~sum(is.na(.x))==0)
+```
+
+# Exploratory Data Analysis
+
+Analyzing the data 
+
+```{r analyze, echo=TRUE}
+train_train <- train %>% group_by(classe) %>% sample_frac(size = .80) %>% ungroup()
+
+train_cv <- train %>% anti_join(train_train, by = "id") %>% select(-id)
+
+train_train <- train_train %>% select(-id)
+
+count(train,classe) %>% mutate(prop = n/sum(n))
+
+count(train_train,classe) %>% mutate(prop = n/sum(n))
+
+count(train_cv,classe) %>% mutate(prop = n/sum(n))
+```
+
+
+```{r plot, echo=FALSE}
+count(train, classe) %>% 
+  ggplot()+
+  geom_bar(aes(x=classe, y=n, fill=classe), stat = "identity")
+```
+
+# Applying the "Decision Tree" model
+
+Finding the "Decision tree" accuracy (acc_dt variable).
+```{r dt, echo=TRUE}
+decision_model <- rpart(classe ~ ., data=train_train, method="class") # class perche classificazione
+
+prediction_dt <- predict(decision_model, train_cv, type = "class") # test_preliminare
+
+rpart.plot(decision_model, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+
+summary_pred_dt <- data.frame(obs = as.factor(train_cv$classe), predicted = prediction_dt)
+
+acc_dt <-sum(summary_pred_dt$obs==summary_pred_dt$predicted)/nrow(summary_pred_dt)#accuracy
+
+conf_mat_dt<-confusionMatrix(prediction_dt, summary_pred_dt$obs)
+
+conf_mat_dt$table
+```
+
+# Applying the "Random Forest" model with CV
+Finding the "Random Forest cross validation" accuracy (acc_cv variable).
+
+```{r rf, echo=TRUE}
+control.parms <- trainControl(method="cv", 5)
+
+model_cv <- train(classe ~ ., data=train_train, method="rf",
+                  trControl=control.parms)
+
+prediction_cv <- predict(model_cv, train_cv, type = "raw")
+
+summary_pred_cv <- data.frame(obs = as.factor(train_cv$classe), predicted = prediction_cv)
+
+acc_cv <- sum(summary_pred_cv$obs==summary_pred_cv$predicted)/nrow(summary_pred_cv)#accuracy
+
+conf_mat_cv<-confusionMatrix(prediction_cv, summary_pred_cv$obs)
+
+conf_mat_cv$table
+```
+
+# Accuracy Comparison
+
+Compare the accuracy
+```{r acc, echo=TRUE}
+acc_dt
+
+acc_cv
+```
+
+Result printed
+
+# Out Of Sample Error
+
+Finding the error on accuracy
+```{r ose, echo=TRUE}
+1 - acc_dt
+
+1 - acc_cv
+```
+
+Result printed
+
+# Final Sumbission 
+
+This is the final prediction using the testing data. This is the command used
+
+```{r pred, echo=TRUE}
+prediction_final <- predict(model_cv, test, type = "raw")
+
+prediction_final
+```
+
+that generate the final result, printed up here.
